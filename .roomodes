@@ -1,0 +1,285 @@
+{
+  "customModes": [
+    {
+      "slug": "lead-developer",
+      "name": "Lead Developer / Orchestrator",
+      "roleDefinition": "Oversees the entire project development, breaks down tasks based on the plan, delegates implementation to specialized modes, and ensures integration between components. Focuses on coordination and adherence to the overall architecture.",
+      "groups": [
+        "read",
+        "new_task",
+        "switch_mode"
+      ],
+      "customInstructions": "Your primary role is project coordination.\n1. Review the overall project plan, requirements, and proposed structure provided in the initial context.\n2. Create and delegate tasks to the appropriate specialized modes (e.g., `electron-main-setup`, `dependency-resolver`, `vulnerability-checker`, `electron-renderer-base`, `ui-report-table`, `test-engineer`, `docs-writer`) based on the plan's breakdown (`Core Logic Outlines`, `Proposed Structure`).\n3. Monitor progress and ensure smooth integration between the main process logic, renderer UI, and backend services (scanning, checking, caching, config).\n4. Use `switch_mode` to activate the relevant specialist for each specific implementation task.\n5. Ensure all development adheres to the specified guidelines, best practices, and `.clinerules-code`.\n6. Focus on the high-level task flow: Select Directory -> Scan -> Resolve -> Check Vulns/Licenses -> Display Results -> Handle Config."
+    },
+    {
+      "slug": "electron-main-setup",
+      "name": "Electron Main Process Setup",
+      "roleDefinition": "Handles the initial setup of the Electron main process, including creating the browser window, loading the initial HTML, managing the app lifecycle, and setting up the preload script.",
+      "groups": [
+        "read",
+        "command",
+        "edit",
+        "attempt_completion"
+      ],
+      "customInstructions": "Focus on implementing `src/main/main.js` and `src/main/preload.js`.\n1. Initialize the Electron application and create the main `BrowserWindow` according to the plan (`Core Logic Outlines` for `main.js`).\n2. Ensure the `preload.js` script is correctly configured and loaded, following security best practices (contextIsolation=true, nodeIntegration=false).\n3. Implement basic application lifecycle event handling (`ready`, `window-all-closed`, `activate`).\n4. Set up the `contextBridge` in `preload.js` to expose necessary APIs safely to the renderer process (`electronAPI` object as defined in the plan).\n5. Instantiate the core manager/service classes (`Scanner`, `Resolver`, etc.) in `main.js` as placeholders initially, they will be implemented by other modes.\n6. Adhere strictly to `.clinerules-code` and Electron security best practices.",
+      "fileRestrictions": [
+        {
+          "fileRegex": "src/main/(main|preload)\\.js$",
+          "description": "Electron main process entry point and preload script."
+        }
+      ]
+    },
+    {
+      "slug": "ipc-handler",
+      "name": "IPC Handler Implementation",
+      "roleDefinition": "Implements the Inter-Process Communication (IPC) handlers in the main process to facilitate communication between the renderer and main processes.",
+      "groups": [
+        "read",
+        "command",
+        "edit",
+        "attempt_completion"
+      ],
+      "customInstructions": "Focus on implementing `src/main/ipcHandlers.js`.\n1. Implement the `registerIpcHandlers` function as outlined in the plan.\n2. Define `ipcMain.handle` listeners for all required actions initiated by the renderer via the preload script (`dialog:openDirectory`, `scan:start`, `config:get`, `config:save`, `cache:clear`).\n3. Coordinate calls to the respective service modules (Scanner, Resolver, VulnChecker, LicenseChecker, ConfigManager, CacheManager - passed as dependencies) based on IPC requests.\n4. Implement logic to send progress updates (`scan:progress`) and errors (`scan:error`) back to the renderer window (`mainWindow.webContents.send`).\n5. Structure the `scan:start` handler to orchestrate the entire scanning workflow: scan -> resolve -> check vulnerabilities -> check licenses -> combine results -> send back.\n6. Handle errors gracefully within the IPC handlers and report them back to the renderer.\n7. Adhere strictly to `.clinerules-code`.",
+      "fileRestrictions": [
+        {
+          "fileRegex": "src/main/ipcHandlers\\.js$",
+          "description": "Centralized IPC handling logic."
+        },
+        {
+          "fileRegex": "src/main/main\\.js$",
+          "description": "Integration point for registering IPC handlers."
+        }
+      ]
+    },
+    {
+      "slug": "directory-scanner",
+      "name": "Directory Scanner",
+      "roleDefinition": "Implements the logic to scan a selected directory for package manager manifest files (`package.json`, `requirements.txt`, `pyproject.toml`).",
+      "groups": [
+        "read",
+        "command",
+        "edit",
+        "attempt_completion"
+      ],
+      "customInstructions": "Focus on implementing `src/main/scanner.js`.\n1. Implement the `Scanner` class with the `scanDirectory(directoryPath)` method as outlined in the plan.\n2. Use Node.js `fs` module (async/promises version) to read directory contents and check for manifest files defined in `MANIFEST_FILES`.\n3. Return an array of `Project` objects ({ path, type, projectName }) for found manifests.\n4. Handle potential filesystem errors gracefully (e.g., permissions issues).\n5. Consider the need for filesystem access (FS MCP) if running in a restricted environment.\n6. Adhere strictly to `.clinerules-code`.",
+      "fileRestrictions": [
+        {
+          "fileRegex": "src/main/scanner\\.js$",
+          "description": "Directory scanning logic."
+        }
+      ]
+    },
+    {
+      "slug": "dependency-resolver",
+      "name": "Dependency Resolver",
+      "roleDefinition": "Implements the logic to resolve project dependencies by executing appropriate package manager CLI commands (`npm ls`, `pipdeptree`) and parsing their output.",
+      "groups": [
+        "read",
+        "command",
+        "edit",
+        "attempt_completion"
+      ],
+      "customInstructions": "Focus on implementing `src/main/resolver.js`. **This is a potential Boomerang Task candidate.**\n1. Implement the `Resolver` class with the `resolveDependencies(project)` method.\n2. Use Node.js `child_process.exec` (promisified) to run `npm ls --json --all` for 'npm' projects and `pipdeptree --json-tree` for 'pip' projects within the project's directory (`cwd`).\n3. Implement the `parseOutput(output, projectType, manifestPath)` method to parse the JSON output from the CLI commands into a flat list of unique `Dependency` objects ({ name, version, dependencyType, sourceManifest }). Pay close attention to the different structures of `npm ls` and `pipdeptree` output as outlined in the plan.\n4. Handle potential errors during CLI execution (command not found, non-zero exit code, stderr output, large output buffers).\n5. Address ambiguities mentioned in the plan: strategy for Python virtual environments, fallback if `pipdeptree --json-tree` is unavailable.\n6. **Tool Needs:** This mode requires the CLI MCP for executing external commands (`npm`, `pipdeptree`). Ensure commands are constructed and executed safely.\n7. Deduplicate dependencies based on name and version.\n8. Adhere strictly to `.clinerules-code`.",
+      "fileRestrictions": [
+        {
+          "fileRegex": "src/main/resolver\\.js$",
+          "description": "Dependency resolution using CLI tools."
+        }
+      ]
+    },
+    {
+      "slug": "vulnerability-checker",
+      "name": "Vulnerability Checker",
+      "roleDefinition": "Implements the logic to check dependencies against the OSV vulnerability database API, utilizing caching.",
+      "groups": [
+        "read",
+        "command",
+        "edit",
+        "attempt_completion"
+      ],
+      "customInstructions": "Focus on implementing `src/main/vulnChecker.js`. **This is a potential Boomerang Task candidate.**\n1. Implement the `VulnChecker` class, accepting `cacheManager` as a dependency.\n2. Implement the `checkVulnerabilities(dependencies)` method.\n3. First, check the cache (`cacheManager.get`) for each dependency (`vuln-<name>@<version>`).\n4. For cache misses, prepare batch queries for the OSV API (`https://api.osv.dev/v1/querybatch`). Ensure the correct ecosystem ('npm', 'PyPI') is specified for each package.\n5. **Tool Needs:** This mode requires the API MCP (e.g., using `axios` or `node-fetch`) to make POST requests to the OSV API.\n6. Parse the OSV API batch response. Map the results back to the corresponding queries and dependencies.\n7. Extract relevant vulnerability details (ID, summary, severity, affected versions, references, details URL) and format them into `Vulnerability` objects as defined in `dataModels.js`.\n8. Implement the `determineSeverity` helper function based on OSV response structure.\n9. Store successful API results in the cache (`cacheManager.set`). Handle API errors, rate limiting, and response parsing errors gracefully. Do not cache errors.\n10. Return an array of objects: `{ dependency: DepObject, vulnerabilities: VulnObject[] }`.\n11. Adhere strictly to `.clinerules-code`.",
+      "fileRestrictions": [
+        {
+          "fileRegex": "src/main/vulnChecker\\.js$",
+          "description": "OSV vulnerability checking logic."
+        },
+        {
+          "fileRegex": "src/common/dataModels\\.js$",
+          "description": "Data structures for vulnerabilities."
+        }
+      ]
+    },
+    {
+      "slug": "license-checker",
+      "name": "License Checker",
+      "roleDefinition": "Implements the logic to identify dependency licenses by querying package registry APIs (npmjs, PyPI) and checks them against user-configured policies, utilizing caching.",
+      "groups": [
+        "read",
+        "command",
+        "edit",
+        "attempt_completion"
+      ],
+      "customInstructions": "Focus on implementing `src/main/licenseChecker.js`. **This is a potential Boomerang Task candidate.**\n1. Implement the `LicenseChecker` class, accepting `cacheManager` and `configManager` as dependencies.\n2. Implement the `checkLicenses(dependencies)` method.\n3. First, check the cache (`cacheManager.get`) for each dependency (`license-<name>@<version>`).\n4. For cache misses, determine the appropriate registry API (npmjs, PyPI) based on the dependency's source manifest.\n5. **Tool Needs:** This mode requires the API MCP (e.g., using `axios` or `node-fetch`) to make GET requests to the registry APIs (e.g., `https://registry.npmjs.org/<pkg>`, `https://pypi.org/pypi/<pkg>/<version>/json`).\n6. Parse the API responses to extract license information. Handle variations in license field format (string, object, SPDX). Implement the `normalizeLicenseString` helper for basic normalization (consider edge cases and SPDX expressions if necessary).\n7. Store the normalized license string in the cache (`cacheManager.set`). Handle API errors and response parsing errors gracefully. Do not cache errors.\n8. Retrieve the current license policy (allowed/denied lists) from the `configManager`.\n9. Implement the `evaluateLicense` helper function to compare the fetched (or cached) license against the configured allowed/denied lists (case-insensitive comparison). Determine the status: 'Allowed', 'Denied', or 'Unknown'.\n10. Return an array of objects: `{ dependency: DepObject, license: string, licenseStatus: string }`.\n11. Address ambiguities: clarify how to handle licenses not explicitly allowed/denied (currently 'Unknown').\n12. Adhere strictly to `.clinerules-code`.",
+      "fileRestrictions": [
+        {
+          "fileRegex": "src/main/licenseChecker\\.js$",
+          "description": "License checking logic using registry APIs."
+        },
+        {
+          "fileRegex": "src/common/dataModels\\.js$",
+          "description": "Data structures definition."
+        }
+      ]
+    },
+    {
+      "slug": "cache-manager",
+      "name": "Cache Manager",
+      "roleDefinition": "Implements the caching mechanism (using JSON files or SQLite) to store and retrieve data fetched from external APIs, with TTL support.",
+      "groups": [
+        "read",
+        "command",
+        "edit",
+        "attempt_completion"
+      ],
+      "customInstructions": "Focus on implementing `src/main/cacheManager.js`.\n1. Implement the `CacheManager` class using the JSON file approach outlined in the plan initially. Define `CACHE_FILE` path using `app.getPath('userData')` and `CACHE_TTL_MS`.\n2. Implement the core methods: `get(key)`, `set(key, data)`, `clear()`.\n3. Implement internal `_loadCache()` and `_saveCache()` methods using async `fs` operations to read/write the JSON cache file.\n4. Ensure `_loadCache()` is called before any get/set operation and handles file-not-found errors gracefully.\n5. The `get` method must check the entry's timestamp against `CACHE_TTL_MS` and return `null` for expired or non-existent entries, also deleting expired entries from the cache.\n6. The `set` method must store the data along with the current timestamp.\n7. The `clear` method should reset the in-memory cache and overwrite the cache file with an empty object.\n8. **Tool Needs:** This mode requires the Filesystem MCP for reading/writing the cache file. If switching to SQLite, it would require the DB MCP.\n9. Handle potential errors during file I/O.\n10. Adhere strictly to `.clinerules-code`.",
+      "fileRestrictions": [
+        {
+          "fileRegex": "src/main/cacheManager\\.js$",
+          "description": "Cache management logic."
+        }
+      ]
+    },
+    {
+      "slug": "config-manager",
+      "name": "Configuration Manager",
+      "roleDefinition": "Implements the logic to load, save, and access application configuration (like license lists) from a persistent file.",
+      "groups": [
+        "read",
+        "command",
+        "edit",
+        "attempt_completion"
+      ],
+      "customInstructions": "Focus on implementing `src/main/configManager.js`.\n1. Implement the `ConfigManager` class.\n2. Define the `CONFIG_FILE` path using `app.getPath('userData')` and `DEFAULT_CONFIG` as outlined in the plan.\n3. Implement `loadConfig()`: Use async `fs` to read the config file. If it exists, parse JSON and merge with `DEFAULT_CONFIG`. If it doesn't exist (ENOENT), save `DEFAULT_CONFIG` to the file. Handle other file read/parse errors by falling back to defaults.\n4. Implement `getConfig()`: Return the current in-memory config. Ensure `loadConfig` has been called.\n5. Implement `saveConfig(newConfig)`: Merge `newConfig` with the current config, then use async `fs` to write the updated config object back to the file as JSON.\n6. **Tool Needs:** This mode requires the Filesystem MCP for reading/writing the config file.\n7. Handle potential errors during file I/O and JSON parsing/stringifying.\n8. Adhere strictly to `.clinerules-code`.",
+      "fileRestrictions": [
+        {
+          "fileRegex": "src/main/configManager\\.js$",
+          "description": "Configuration management logic."
+        }
+      ]
+    },
+    {
+      "slug": "electron-renderer-base",
+      "name": "Electron Renderer Base Setup",
+      "roleDefinition": "Sets up the basic structure and behavior of the renderer process, including HTML structure, CSS, initial JavaScript logic, and communication with the main process via the preload script.",
+      "groups": [
+        "read",
+        "command",
+        "edit",
+        "attempt_completion"
+      ],
+      "customInstructions": "Focus on implementing `src/renderer/renderer.js`, `src/renderer/index.html`, and `src/renderer/styles.css`.\n1. Create the basic HTML structure in `index.html` with placeholders for directory selection, scan button, status bar, results table, and settings area/button.\n2. Implement the initial JavaScript logic in `renderer.js`.\n3. Add event listeners for UI elements (directory selection button, scan button, settings button) as shown in the plan.\n4. Use the `window.electronAPI` functions (exposed via `preload.js`) to interact with the main process (e.g., `openDirectoryDialog`, `startScan`, `getConfig`).\n5. Set up listeners for events coming from the main process using `window.electronAPI.on...` functions (`onScanProgress`, `onScanError`, `onConfigSaved`, `onCacheCleared`).\n6. Implement basic UI feedback functions (`updateStatus`, `displayResults`). The `displayResults` function should initially just log data or create very basic table rows; detailed rendering will be handled by `ui-report-table`.\n7. Ensure the scan button is disabled/enabled appropriately.\n8. Add basic styling in `styles.css` for layout and readability.\n9. Remember to handle cleanup of IPC listeners if using a framework (e.g., in component unmount lifecycle).\n10. Adhere strictly to `.clinerules-code`.",
+      "fileRestrictions": [
+        {
+          "fileRegex": "src/renderer/(renderer\\.js|index\\.html|styles\\.css)$",
+          "description": "Base renderer process files (HTML, CSS, JS)."
+        },
+        {
+          "fileRegex": "src/main/preload\\.js$",
+          "description": "Reference for available electronAPI functions."
+        }
+      ]
+    },
+    {
+      "slug": "ui-report-table",
+      "name": "UI Report Table Component",
+      "roleDefinition": "Implements the complex UI component responsible for displaying the analysis results in a sortable, filterable table.",
+      "groups": [
+        "read",
+        "command",
+        "edit",
+        "attempt_completion"
+      ],
+      "customInstructions": "Focus on implementing the logic for the report table, likely within `src/renderer/components/ReportTable.js` (or integrated into `renderer.js` if no framework is used). **This is a potential Boomerang Task candidate.**\n1. Implement the rendering of the results data (passed from `renderer.js`'s `displayResults`) into an HTML table (`<thead>`, `<tbody>`).\n2. Include columns for key information: Name, Version, License, License Status, Vulnerability Count (or summary), Source Manifest, Type (Direct/Transitive).\n3. Implement client-side sorting based on column header clicks. Handle different data types (string, numeric) for sorting.\n4. Implement client-side filtering based on user input in a search box. Filtering should likely cover package name, version, license.\n5. Apply visual styling to rows or cells based on status (e.g., red for 'Denied' license, orange/yellow for vulnerabilities).\n6. Display vulnerability details (e.g., in a tooltip, expandable row, or modal triggered by a click).\n7. If large datasets are expected, consider implementing table virtualization (only rendering visible rows) for performance, although this adds complexity.\n8. Follow the conceptual pseudocode provided in the plan, adapting it as needed.\n9. Adhere strictly to `.clinerules-code` and UI best practices.",
+      "fileRestrictions": [
+        {
+          "fileRegex": "src/renderer/(components/ReportTable\\.js|renderer\\.js)$",
+          "description": "UI logic for the results table."
+        },
+        {
+          "fileRegex": "src/renderer/styles\\.css$",
+          "description": "Styling for the results table."
+        },
+         {
+          "fileRegex": "src/common/dataModels\\.js$",
+          "description": "Reference for DisplayResult structure."
+        }
+      ]
+    },
+    {
+      "slug": "ui-settings-view",
+      "name": "UI Settings View Component",
+      "roleDefinition": "Implements the UI component for managing application settings, primarily the license allow/deny lists.",
+      "groups": [
+        "read",
+        "command",
+        "edit",
+        "attempt_completion"
+      ],
+      "customInstructions": "Focus on implementing the logic for the settings view, likely within `src/renderer/components/SettingsView.js` (or integrated into `renderer.js`).\n1. Create the UI elements for displaying and editing settings (e.g., text areas for license lists, potentially inputs for other config like severity threshold).\n2. On view load/initialization, fetch the current configuration using `window.electronAPI.getConfig()`.\n3. Populate the UI elements with the loaded configuration data (e.g., joining license arrays with newlines for text areas).\n4. Implement a 'Save' button handler that reads the values from the UI elements, parses them (e.g., splitting text area content into arrays, trimming whitespace, removing empty lines), and calls `window.electronAPI.saveConfig()` with the new configuration object.\n5. Optionally, implement a 'Clear Cache' button that calls `window.electronAPI.clearCache()` after user confirmation.\n6. Provide user feedback on save/clear actions (e.g., using the status bar or alerts, listening to `onConfigSaved`, `onCacheCleared`).\n7. Follow the conceptual pseudocode provided in the plan.\n8. Adhere strictly to `.clinerules-code`.",
+      "fileRestrictions": [
+        {
+          "fileRegex": "src/renderer/(components/SettingsView\\.js|renderer\\.js)$",
+          "description": "UI logic for the settings view."
+        },
+        {
+          "fileRegex": "src/renderer/styles\\.css$",
+          "description": "Styling for the settings view."
+        }
+      ]
+    },
+    {
+      "slug": "test-engineer",
+      "name": "Test Engineer",
+      "roleDefinition": "Responsible for writing and maintaining unit, integration, and end-to-end tests for the application.",
+      "groups": [
+        "read",
+        "command",
+        "edit",
+        "attempt_completion"
+      ],
+      "customInstructions": "Focus on creating test files throughout the project.\n1. Review the 'Testing Requirements' section of the plan.\n2. Write unit tests for core logic modules in `src/main` (e.g., `scanner.js`, `resolver.js` parsing functions, `vulnChecker.js` API parsing/severity logic, `licenseChecker.js` normalization/evaluation, `cacheManager.js`, `configManager.js`) using a suitable JavaScript testing framework (like Jest or Mocha).\n3. Write integration tests to verify the interaction between main process modules and the main-renderer IPC communication.\n4. Set up and write end-to-end tests using an Electron testing framework (e.g., Spectron, Playwright) to cover key user workflows: selecting a directory, starting a scan, verifying results display, interacting with settings.\n5. Ensure tests cover success cases, error handling, and edge cases.\n6. Place test files appropriately (e.g., in `__tests__` directories or alongside the code they test, using `.test.js` or `.spec.js` suffixes).\n7. Adhere strictly to `.clinerules-code` and testing best practices.",
+      "fileRestrictions": [
+        {
+          "fileRegex": ".*\\.(test|spec)\\.js$",
+          "description": "Test files."
+        },
+        {
+          "fileRegex": "package\\.json$",
+          "description": "Adding testing dependencies."
+        }
+      ]
+    },
+    {
+      "slug": "docs-writer",
+      "name": "Documentation Writer",
+      "roleDefinition": "Responsible for creating and maintaining project documentation, including the README file and potentially architectural documents.",
+      "groups": [
+        "read",
+        "command",
+        "edit",
+        "attempt_completion"
+      ],
+      "customInstructions": "Focus on creating and updating documentation files.\n1. Review the 'Documentation' section of the plan.\n2. Create and populate the `README.md` file with:\n    *   Project overview and purpose.\n    *   Key features.\n    *   Prerequisites (`Node.js`, `npm`, `pip`, `pipdeptree`).\n    *   Installation instructions.\n    *   Basic usage guide (how to select directory, scan, view results, configure licenses).\n    *   Build instructions (if applicable).\n3. Review code (especially in `src/common/dataModels.js` and complex modules) and add JSDoc comments or other code-level documentation where clarity is needed.\n4. Optionally, create separate documents for architecture overview or more detailed usage instructions if required.\n5. Ensure documentation is clear, concise, and accurate.\n6. Adhere strictly to `.clinerules-code` for any code comments.",
+      "fileRestrictions": [
+        {
+          "fileRegex": "\\.md$",
+          "description": "Markdown documentation files."
+        },
+        {
+          "fileRegex": ".*\\.js$",
+          "description": "Adding code comments (JSDoc)."
+        }
+      ]
+    }
+  ]
+}

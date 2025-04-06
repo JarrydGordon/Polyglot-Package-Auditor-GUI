@@ -1,0 +1,96 @@
+// .clinerules-code for Polyglot Package Auditor GUI
+// Primary Tech Stack: Electron, Node.js (Main Process), JavaScript/TypeScript, HTML/CSS (Renderer), npm (CLI), pip/pipdeptree (CLI), OSV API, npmjs API, PyPI API, SQLite (preferred) / JSON Files (Cache), axios/node-fetch
+// Coding Standards/Style Guide: Airbnb JavaScript Style Guide (Example referenced), ESLint, Prettier, Secure Coding Practices
+// Testing Framework/Approach: Unit Tests, Integration Tests, E2E Tests (Spectron/Playwright mentioned), TDD/BDD encouraged
+// Integration Requirements: Main/Renderer IPC, Filesystem Access, CLI Execution (npm, pip/pipdeptree), External HTTP APIs (OSV, npmjs, PyPI), Local Cache (SQLite/JSON)
+
+// --- Electron Specific Rules ---
+
+// Enforce strict separation between Main and Renderer processes. Core logic resides in Main.
+// Use Electron IPC (`ipcMain`, `ipcRenderer`) for all communication between processes.
+// Employ `contextBridge` in `preload.js` to expose specific, secure APIs to the Renderer. Avoid exposing `ipcRenderer` or Node.js APIs directly.
+// Set `contextIsolation: true` in BrowserWindow webPreferences for security.
+// Set `nodeIntegration: false` in BrowserWindow webPreferences. Use preload scripts for Node.js access from Renderer.
+// Manage application lifecycle events (`ready`, `window-all-closed`, `activate`) in `main.js`.
+// Handle window creation and management within the main process.
+// Ensure renderer listeners added via preload (`ipcRenderer.on`) are cleaned up (e.g., `removeAllListeners`) when components unmount or the window closes to prevent memory leaks.
+
+// --- Node.js (Main Process) Rules ---
+
+// Use `async/await` extensively for I/O operations (filesystem, network, child processes) to maintain responsiveness.
+// Implement robust error handling (try/catch blocks, Promise `.catch()`) for all async operations, especially `fs`, `child_process`, and API calls.
+// Prefer `fs.promises` for asynchronous file system operations.
+// Structure main process logic into modular files (e.g., scanner, resolver, checkers, cacheManager, configManager, ipcHandlers).
+// Use `require` or `import` consistently according to project setup (CommonJS likely for Electron main).
+// Manage dependencies via `package.json` and `npm install`. Regularly audit project dependencies (`npm audit`).
+// Handle unhandled promise rejections and uncaught exceptions globally in `main.js` for logging/reporting.
+
+// --- Renderer Process Rules ---
+
+// Keep Renderer logic focused on UI presentation, user interaction, and communication with the Main process via the exposed preload API (`window.electronAPI`).
+// Do not perform direct Node.js API calls or filesystem access from the Renderer. Delegate to the Main process via IPC.
+// If using a UI framework (React, Vue, etc.), follow its component structure and state management best practices.
+// Ensure UI remains responsive during long-running background tasks managed by the Main process. Use progress indicators based on IPC messages.
+// Sanitize and validate any user input before sending it to the Main process.
+
+// --- API Interaction Rules (OSV, npmjs, PyPI) ---
+
+// Use `axios` or `node-fetch` for all HTTP(S) requests within the Main process.
+// Implement comprehensive error handling for API calls: check response status codes, handle network errors (timeouts, DNS issues), parse responses safely (check structure).
+// Respect API rate limits. Implement caching (`CacheManager`) to minimize redundant calls.
+// Consider batching API requests where supported (e.g., OSV `querybatch`) to improve efficiency.
+// Abstract API interaction logic into dedicated modules (e.g., `VulnChecker`, `LicenseChecker`).
+// Normalize data received from different APIs into consistent internal models (`src/common/dataModels.js`).
+
+// --- CLI Interaction Rules (`npm`, `pip`/`pipdeptree`) ---
+
+// Use `child_process.exec` or `child_process.spawn` (prefer `exec` for simpler commands, `spawn` for streaming/large output) within the Main process.
+// Use `util.promisify(exec)` for promise-based execution with `async/await`.
+// **CRITICAL: Sanitize any user-provided input used in constructing CLI commands to prevent command injection vulnerabilities.** Construct paths carefully.
+// Specify the `cwd` (current working directory) option when executing commands to ensure they run in the correct project context.
+// Increase the `maxBuffer` option for `exec` if expecting large JSON outputs (e.g., from `npm ls --json`). Handle potential buffer overflows.
+// Check both `stderr` and exit codes for errors. Some tools (like `npm ls`) might write warnings to stderr even on success. Parse `stderr` for specific error messages (e.g., "command not found").
+// Handle cases where required CLI tools (`npm`, `pip`, `pipdeptree`) are not installed or not in the system PATH. Provide informative errors to the user.
+// Parse CLI output carefully, anticipating potential variations or errors in the output format (JSON, text). Use try/catch during parsing.
+// Address ambiguity regarding Python virtual environments; determine a clear strategy (e.g., check common names, require user config, execute within detected venv if possible).
+
+// --- Caching Rules (SQLite/JSON) ---
+
+// Implement caching via a dedicated `CacheManager` module with a clear interface (`get`, `set`, `clear`).
+// Use SQLite (`sqlite3`) if complex querying or better scaling is needed; use JSON files (`fs.promises`) for simpler key-value storage. Abstract the storage mechanism behind the `CacheManager`.
+// Implement Time-To-Live (TTL) for cache entries to ensure data freshness. Check expiration on `get`.
+// Handle errors during cache loading (`fs.readFile`, `JSON.parse`, DB connection) and saving (`fs.writeFile`, DB write). Gracefully degrade (e.g., proceed without cache) or log errors appropriately.
+// Store cache files in a standard user data location (`app.getPath('userData')`).
+// Provide a mechanism (e.g., via IPC) for the user to clear the cache if needed.
+// Cache API responses (vulnerabilities, licenses) using a key derived from the dependency name and version.
+
+// --- Agentic Tool Usage Guidelines ---
+
+// If using agentic tools (e.g., `use_cli_tool`, `use_fs_tool`, `use_api_tool`, `use_db_tool`):
+// Always wrap tool calls in `try...catch` blocks to handle potential execution errors, permissions issues, or tool-specific failures.
+// Validate and sanitize parameters passed to agentic tools, especially file paths and command arguments.
+// Check the success status and parse the results returned by the tool carefully. Do not assume success or a specific output format.
+// Log interactions with agentic tools, including parameters and outcomes, for debugging purposes.
+// For `use_cli_tool`: Be explicit about the working directory (`cwd`) and handle potential errors related to tool availability or execution permissions. Check `stdout`, `stderr`, and `exit_code`.
+// For `use_fs_tool`: Handle file not found, permission errors, and encoding issues explicitly. Prefer specific actions (read, write, list) over generic commands.
+// For `use_api_tool`/`use_http_request`: Handle network errors, non-2xx status codes, and response parsing errors. Set appropriate timeouts.
+// For `use_db_tool` (if using SQLite via MCP): Handle connection errors, query syntax errors, and transaction logic correctly.
+
+// --- General Guidelines ---
+
+// Follow the specified coding style guide (e.g., Airbnb) and enforce using ESLint and Prettier.
+// Use descriptive names for variables, functions, classes, and files.
+// Write clear comments for complex logic, assumptions, or sections requiring specific handling.
+// Prioritize security: sanitize inputs, validate data, follow Electron security best practices.
+// Keep functions small and focused on a single responsibility.
+// Use constants for frequently used strings like IPC channel names, cache keys, API endpoints.
+// Define clear data structures/models (`src/common/dataModels.js`), especially for data passed between modules or processes. Use JSDoc or TypeScript interfaces.
+
+// --- Testing Rules ---
+
+// Write unit tests for core logic (parsing, checking, caching, utils). Mock external dependencies (CLI, API, FS, IPC).
+// Write integration tests for module interactions within the main process (e.g., Scanner -> Resolver -> Checker flow).
+// Implement E2E tests (using Spectron/Playwright) for critical user workflows (select dir, scan, view results, apply filters, save settings).
+// Ensure tests cover error handling paths and edge cases.
+// Use clear and descriptive test names (`describe`, `it`).
+// Aim for good test coverage of core logic modules.
